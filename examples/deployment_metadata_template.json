@@ -1,4 +1,8 @@
 {
+  "deployment": "SiteName_YYYYMMM",
+  "site": "SiteName",
+  "timezone": "America/New_York",
+  "timezone_fixed_offset": "-05:00",
   "deployment_notes": "Put deployment-level notes here (weather, conditions, etc.)",
   "sensors": {
     "SensorLabel1": {

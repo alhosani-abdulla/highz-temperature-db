@@ -2,7 +2,7 @@
 
 ## Database Schema
 
-The temperature database uses four core tables with foreign key relationships to maintain referential integrity and enable efficient queries.
+The temperature database uses five core tables with foreign key relationships to maintain referential integrity and enable efficient queries.
 
 ## Tables
 
@@ -16,6 +16,7 @@ Represents a single deployment period of sensors at a site.
 | `name` | TEXT | NOT NULL, UNIQUE | Human-readable deployment name |
 | `site` | TEXT | NOT NULL | Site/location name |
 | `timezone_name` | TEXT | NOT NULL | IANA timezone (e.g., "America/New_York") |
+| `timezone_fixed_offset` | TEXT | | Fixed UTC offset (e.g., "-05:00") to prevent DST issues |
 | `notes` | TEXT | | Optional deployment notes |
 | `created_at_utc` | INTEGER | NOT NULL | Insertion timestamp (epoch seconds) |
 
@@ -23,6 +24,15 @@ Represents a single deployment period of sensors at a site.
 - Group temperature readings by deployment campaign
 - Track timezone for timestamp conversion
 - Store deployment-level metadata
+- Support fixed timezone offsets to prevent DST conversion errors
+
+**Fixed Timezone Offsets:**
+
+Sensor clocks remain unsynced after initialization and don't follow DST transitions. The `timezone_fixed_offset` field prevents incorrect conversions:
+- If sensors initialized in EST: `-05:00`
+- If sensors initialized in EDT: `-04:00`
+
+This ensures timestamps are converted correctly even when deployments span DST transitions.
 
 **Example rows:**
 ```
@@ -44,7 +54,6 @@ Catalog of all temperature sensors used across deployments.
 | `part_number` | TEXT | | Manufacturer part number |
 | `registration_number` | TEXT | UNIQUE | Unique sensor serial number |
 | `label` | TEXT | | Human-readable label |
-| `location_notes` | TEXT | | Notes about sensor placement |
 | `created_at_utc` | INTEGER | NOT NULL | First appearance timestamp |
 
 **Purpose:**
@@ -60,6 +69,35 @@ Each physical sensor has a permanent serial number that uniquely identifies it a
 sensor_id | sensor_type     | registration_number | label              
 1         | ibutton_ds1925  | 0000ABC123         | Antenna Top
 2         | ibutton_ds1925  | 0000DEF456         | Ground Level
+```
+
+---
+
+### `sensor_deployments`
+
+Junction table linking sensors to deployments with deployment-specific metadata.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `sensor_id` | INTEGER | PRIMARY KEY, FK | References `sensors` |
+| `deployment_id` | INTEGER | PRIMARY KEY, FK | References `deployments` |
+| `location` | TEXT | | Deployment-specific sensor location |
+| `notes` | TEXT | | Deployment-specific notes |
+
+**Purpose:**
+- Store deployment-specific sensor metadata
+- Support sensor reuse across multiple deployments
+- Track different locations for same sensor in different deployments
+
+**Why this table exists:**
+Sensors are often reused across deployments but placed in different locations each time. This table allows each sensor-deployment combination to have its own location and notes, while the `sensors` table tracks only permanent sensor properties.
+
+**Example rows:**
+```
+sensor_id | deployment_id | location                          | notes
+1         | 1            | Antenna mount, north face         | Exposed to wind
+1         | 2            | RF box, upper compartment         | Temperature controlled
+2         | 1            | Digital spec enclosure, center    | Near power supply
 ```
 
 ---
@@ -244,11 +282,15 @@ WHERE deployment_name = 'Adak_2025Dec';
 ```
 deployments (1) ──── (many) files
                 │
-                └──── (many) temperature_readings
+                ├──── (many) temperature_readings
+                │
+                └──── (many) sensor_deployments
 
 sensors (1) ──────── (many) files
            │
-           └──────── (many) temperature_readings
+           ├──────── (many) temperature_readings
+           │
+           └──────── (many) sensor_deployments
 
 files (1) ────────── (many) temperature_readings
 ```

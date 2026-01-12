@@ -20,12 +20,16 @@ Data/temp_raw/
 │       └── RFBox_iButton_Dec2025.csv
 ```
 
-### 2. Create Deployment Metadata (Optional but Recommended)
+### 2. Create Deployment Metadata (Required)
 
 Create a `deployment_metadata.json` file in the same directory as your CSV files:
 
 ```json
 {
+  "deployment": "Adak_2025Dec",
+  "site": "Adak",
+  "timezone": "America/New_York",
+  "timezone_fixed_offset": "-05:00",
   "deployment_notes": "December 2025 deployment - cold weather testing",
   "sensors": {
     "Antenna": {
@@ -44,37 +48,43 @@ Create a `deployment_metadata.json` file in the same directory as your CSV files
 }
 ```
 
+**Required fields:**
+- **deployment**: Unique identifier (e.g., `Adak_2025Dec`)
+- **site**: Location name (e.g., `Adak`)
+- **timezone**: IANA timezone name (e.g., `America/New_York`)
+- **timezone_fixed_offset**: Fixed UTC offset to prevent DST issues (e.g., `-05:00` for EST, `-04:00` for EDT)
+- **sensors**: Dictionary mapping sensor labels to location/notes
+
 The sensor labels (like "Antenna", "DigitalSpec") are extracted from the CSV filenames.
 
 See `examples/deployment_metadata_template.json` for a template.
 
-### 3. Prepare Command-Line Metadata
+**Important: Fixed Timezone Offsets**
 
-Gather:
-- **Deployment name**: Unique identifier (e.g., `Adak_2025Dec`)
-- **Site name**: Location (e.g., `Adak`)
-- **Timezone**: Where sensors were deployed (`America/New_York` for Pittsburgh)
-- **Notes** (optional): Can be provided via command line or in `deployment_metadata.json`
+Sensor clocks are not synced with world time after initialization, so they don't follow DST transitions. Use a **fixed offset** matching when the sensors were initialized:
+- If initialized in EST (Nov-Mar): use `-05:00`
+- If initialized in EDT (Mar-Nov): use `-04:00`
 
-### 4. Ingest Data
+This prevents incorrect timestamp conversions when deployments span DST transitions.
+
+### 3. Ingest Data
 
 ```bash
 cd highz-temperature-db/scripts
 
-# Ingest all CSV files for this deployment
-# The script will automatically find and load deployment_metadata.json if it exists
+# Simply point to the deployment directory
+# The script reads all metadata from deployment_metadata.json
 python ingest_ibutton_csv.py /path/to/temperature.db \
-    /path/to/Data/temp_raw/Adak/2025Dec/*.csv \
-    --deployment "Adak_2025Dec" \
-    --site "Adak" \
-    --timezone "America/New_York"
+    /path/to/Data/temp_raw/Adak/2025Dec
 ```
 
 **What happens:**
-- ✅ Script finds `deployment_metadata.json` in the CSV directory
+- ✅ Script finds all CSV files in the deployment directory
+- ✅ Reads deployment metadata from `deployment_metadata.json`
 - ✅ Extracts sensor labels from filenames (e.g., "Antenna" from "Antenna_iButton_Dec2025.csv")
 - ✅ Looks up each sensor in the metadata file
-- ✅ Sets sensor location notes and deployment-specific notes
+- ✅ Applies fixed timezone offset for accurate UTC conversion
+- ✅ Stores deployment-specific sensor locations in `sensor_deployments` table
 - ✅ Stores everything in the database
 
 **Expected output:**
@@ -101,8 +111,11 @@ python ingest_ibutton_csv.py /path/to/temperature.db \
 # List all deployments
 python query_temperature.py /path/to/temperature.db --list-deployments
 
-# List all sensors
+# List all sensors (without location info)
 python query_temperature.py /path/to/temperature.db --list-sensors
+
+# List sensors for a specific deployment (with locations)
+python query_temperature.py /path/to/temperature.db --list-deployment-sensors Adak_2025Dec
 
 # Check file summary
 python query_temperature.py /path/to/temperature.db --file-summary

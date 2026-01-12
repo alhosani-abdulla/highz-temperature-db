@@ -115,6 +115,87 @@ Python's `datetime.replace(tzinfo=..., fold=1)`:
 
 ---
 
+## Fixed Timezone Offset Mode
+
+### The Problem with DST Auto-Conversion
+
+Sensor clocks are initialized in Pittsburgh local time, but they **do not sync with world time** after deployment. This creates issues when deployments span DST transitions:
+
+**Example scenario:**
+- Sensors initialized on Nov 1, 2025 at 10:00 AM EDT (UTC-4)
+- DST ends Nov 2, 2025 at 2:00 AM → clocks "fall back" to EST (UTC-5)
+- **But sensor clocks don't change** - they keep running in EDT
+- If we assume EST after Nov 2, all timestamps are off by 1 hour!
+
+### Solution: Fixed Timezone Offsets
+
+Use a **fixed UTC offset** matching when sensors were initialized:
+
+```json
+{
+  "timezone": "America/New_York",
+  "timezone_fixed_offset": "-04:00"
+}
+```
+
+This tells the ingestion script:
+- Use `-04:00` (EDT) for **all** timestamps in this deployment
+- Don't apply DST transition rules
+- Convert timestamps as if they're always in EDT
+
+### When to Use Fixed Offsets
+
+**Use `-05:00` (EST) if:**
+- Sensors initialized November - March
+- Deployment entirely during EST period
+
+**Use `-04:00` (EDT) if:**
+- Sensors initialized March - November  
+- Deployment entirely during EDT period
+
+**Important:** Once sensors are initialized, they stay in that offset for the entire deployment.
+
+### Implementation
+
+In `utils.py::local_to_utc()`:
+
+```python
+def local_to_utc(local_time_str: str, 
+                 timezone_name: str = "America/New_York",
+                 fixed_offset: str = None) -> int:
+    """
+    If fixed_offset is provided (e.g., "-05:00"), use it instead of 
+    timezone_name to prevent DST-related conversion errors.
+    """
+    dt = datetime.strptime(local_time_str, "%m/%d/%y %I:%M:%S %p")
+    
+    if fixed_offset:
+        # Use fixed offset, ignore DST rules
+        tz = timezone(timedelta(hours=int(fixed_offset.split(':')[0]),
+                               minutes=int(fixed_offset.split(':')[1])))
+        dt_aware = dt.replace(tzinfo=tz)
+    else:
+        # Use timezone with DST rules (original behavior)
+        tz = ZoneInfo(timezone_name)
+        dt_aware = dt.replace(tzinfo=tz, fold=1)
+    
+    return int(dt_aware.timestamp())
+```
+
+### Verification
+
+```python
+# Without fixed offset (WRONG for unsynced sensors)
+local_to_utc("11/03/25 10:00:00 AM", "America/New_York")
+# → Assumes EST after Nov 2, gives UTC-5 offset
+
+# With fixed offset (CORRECT)
+local_to_utc("11/03/25 10:00:00 AM", "America/New_York", "-04:00")
+# → Uses EDT throughout, maintains UTC-4 offset
+```
+
+---
+
 ## Conversion Implementation
 
 ### Code: `utils.py::local_to_utc()`

@@ -32,10 +32,9 @@ This repository provides tools to manage temperature sensor data from infrequent
 ### 1. Initialize the Database
 
 ```bash
-# Create a new database
+# Create a new database and ingest first deployment
 cd scripts
-python ingest_ibutton_csv.py /path/to/temperature.db dummy.csv \
-    --deployment init --site init --init-db
+python ingest_ibutton_csv.py ~/temperature.db ~/Data/temp_raw/Adak/2025Dec --init-db
 ```
 
 Or initialize manually:
@@ -43,18 +42,50 @@ Or initialize manually:
 sqlite3 /path/to/temperature.db < schema/temperature.sql
 ```
 
-### 2. Ingest Temperature Data
+### 2. Prepare Deployment Metadata
 
-```bash
-python ingest_ibutton_csv.py /path/to/temperature.db \
-    /path/to/raw_data/Adak/2025Dec/*.csv \
-    --deployment "Adak_2025Dec" \
-    --site "Adak" \
-    --timezone "America/New_York"
+Create a `deployment_metadata.json` file in each deployment directory:
+
+```json
+{
+  "deployment": "Adak_2025Dec",
+  "site": "Adak",
+  "timezone": "America/New_York",
+  "timezone_fixed_offset": "-05:00",
+  "deployment_notes": "December 2025 Adak deployment.",
+  "sensors": {
+    "Antenna": {
+      "location": "Below Antenna Ground Plate",
+      "notes": "Taped to ground plate"
+    },
+    "DigitalSpec": {
+      "location": "Inside DS enclosure",
+      "notes": "Taped on RF deck"
+    }
+  }
+}
 ```
 
-### 3. Query Data in Python
+### 3. Ingest Temperature Data
 
+Simply point to the deployment directory - the script automatically finds CSV files and reads metadata:
+
+```bash
+python ingest_ibutton_csv.py ~/temperature.db ~/Data/temp_raw/Adak/2025Dec
+```
+
+The script will:
+- Find all CSV files in the directory
+- Read deployment info from `deployment_metadata.json`
+- Extract sensor labels from filenames
+- Apply fixed timezone offset (no DST issues!)
+- Store deployment-specific sensor locations
+
+### 3. Query Data  (without locations)
+python query_temperature.py temperature.db --list-sensors
+
+# List sensors for a specific deployment (with locations)
+python query_temperature.py temperature.db --list-deployment-sensors Adak_2025Dec
 ```python
 from query_temperature import load_deployment_data, list_deployments
 
@@ -106,18 +137,20 @@ highz-temperature-db/
 └── docs/
     ├── overview.md              # System design overview
     ├── workflow.md              # Step-by-step workflows
-    ├── data_model.md            # Database schema details
-    └── timezone_handling.md     # Timezone conversion details
-```
+    ├── data_model.md            # Database schema details, but remain unsynced to world clocks during deployment.
 
-## Data Organization
+- **Fixed timezone offsets** prevent DST transition issues
+- Original local timestamps are **preserved exactly** as recorded
+- UTC timestamps are computed using the fixed offset specified in deployment metadata
+- Each deployment can have its own timezone offset (e.g., `-04:00` for EDT, `-05:00` for EST)
+- See [docs/timezone_handling.md](docs/timezone_handling.md) for details
 
-### Raw Data
-- Store raw CSV files separately from this repository
-- Organize by site and deployment (e.g., `Data/temp_raw/Adak/2025Dec/`)
-- **Never modify** these files
-- Database references these files by path
+## Database Schema
 
+Five main tables:
+- **deployments**: Deployment metadata (site, timezone, notes)
+- **sensors**: Sensor catalog (type, part number, registration, label)
+- **sensor_deployments**: Deployment-specific sensor metadata (location, notes
 ### Database
 - Single `.sqlite` file (e.g., `temperature.db`)
 - Store outside this repository (not tracked in git)
@@ -153,10 +186,19 @@ Four main tables:
 - **temperature_readings**: Individual measurements (time, value)
 
 See [docs/data_model.md](docs/data_model.md) for complete schema documentation.
+ to organized directory (e.g., `Data/temp_raw/SiteName/YYYYMMM/`)
+2. Create `deployment_metadata.json` in the same directory
+3. Run ingestion: `python ingest_ibutton_csv.py temperature.db /path/to/deployment/dir`
+4. Verify: `python query_temperature.py temperature.db --list-deployment-sensors DeploymentName`
 
-## Workflows
+### Sharing Data with Team
 
-### After a New Deployment
+The database file is self-contained and includes all temperature data:
+
+1. Upload `temperature.db` to Google Drive (typically ~7MB for 80k readings)
+2. Team members download just the database file (no CSV files needed)
+3. They can query, analyze, and export data using `query_temperature.py`
+4. To add new deployments, maintain database centrally or share updated version
 
 1. Extract CSV files from sensors
 2. Store raw CSVs in organized directory
@@ -164,11 +206,3 @@ See [docs/data_model.md](docs/data_model.md) for complete schema documentation.
 4. Verify ingestion with queries
 
 See [docs/workflow.md](docs/workflow.md) for detailed steps.
-
-## License
-
-[Specify your license]
-
-## Contact
-
-[Your contact information]
