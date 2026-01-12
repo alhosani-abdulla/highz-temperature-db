@@ -1,0 +1,13 @@
+{
+  "deployment_notes": "Put deployment-level notes here (weather, conditions, etc.)",
+  "sensors": {
+    "SensorLabel1": {
+      "location": "Physical location of this sensor",
+      "notes": "Any additional notes about this sensor for this deployment"
+    },
+    "SensorLabel2": {
+      "location": "Physical location description",
+      "notes": "Additional context"
+    }
+  }
+}
